@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>131 产线 · 三维课堂</title>
+<link rel="stylesheet" href="classroom.css?v=s05-pid">
+<script type="importmap">{"imports":{"three":"./s02/vendor/build/three.module.js"}}</script>
+</head>
+<body>
+<header class="header"><a href="#/line" class="brand"><span class="mark" aria-hidden="true">▦</span>131 产线<span class="brand-divider"></span><span class="brand-subtitle">三维课堂</span></a></header>
+<main>
+  <nav class="trail" aria-label="当前位置"><a href="#/line">整线总览</a><span id="trail-station" hidden></span></nav>
+  <div class="page-title"><div><h1 id="title">131 产线总览</h1><p id="intro"></p></div><a href="#/line" id="back-to-line" class="quiet" hidden>← 返回整线</a></div>
+  <div class="station-strip" id="stations" aria-label="工作站"></div>
+  <div class="workspace">
+    <section class="viewer" aria-label="三维视图">
+      <div id="viewport"></div>
+      <div class="toolbar" id="views" aria-label="预设视角"></div>
+      <div id="load-panel" class="load-panel">
+        <p id="status" role="status">正在初始化预览…</p>
+        <button id="retry" type="button" hidden>重试加载</button>
+        <a id="open-local-preview" class="quiet" href="http://127.0.0.1:8783/" hidden>打开本机网页预览</a>
+      </div>
+      <div class="viewer-foot"><span>拖动旋转 · 滚轮缩放 · 右键平移</span><button type="button" class="quiet" id="reset">复位视角</button></div>
+    </section>
+    <section id="heating-trend" class="heating-trend" aria-label="炉温与加热功率趋势" hidden>
+      <div class="section-heading">
+        <h3>温控趋势</h3>
+        <div class="heat-legend"><span data-trace="setpoint">设定温度 SP</span><span data-trace="temperature">实际炉温 PV</span><span data-trace="power">加热功率</span></div>
+      </div>
+      <canvas id="heat-plot" aria-label="最近 150 秒的设定温度、实际炉温和加热功率曲线" role="img"></canvas>
+    </section>
+    <aside>
+      <div class="aside-summary"><span id="aside-label" class="section-label">工作站</span><h2 id="selection">从整线选择工位</h2><p id="description"></p><a class="primary" id="open-station" hidden>进入工作站 <span aria-hidden="true">→</span></a><code id="component-path" hidden></code><p id="component-source" hidden></p></div>
+      <section id="heating-controls" class="teaching-panel" hidden>
+        <h3>炉温 PID 控制</h3>
+        <div class="heat-readouts">
+          <div><span>实际炉温</span><output id="heat-temperature">25.0 °C</output></div>
+          <div><span>加热功率</span><output id="heat-power">0%</output></div>
+          <div><span>工件温度</span><output id="heat-part-temp">—</output></div>
+        </div>
+        <div class="heat-form">
+          <label>控制方式 <select id="heat-mode"><option value="pid">PID</option><option value="manual">固定功率</option></select></label>
+          <label>设定温度 (°C) <input id="heat-setpoint" type="number" min="30" max="95" step="1" value="65"></label>
+          <label id="heat-manual-field" hidden>固定功率 (%) <input id="heat-manual" type="number" min="0" max="100" step="1" value="34"></label>
+        </div>
+        <div id="heat-gains" class="heat-gains">
+          <label>Kp <input id="heat-kp" type="number" min="0" max="30" step="0.1" value="5.5"></label>
+          <label>Ki <input id="heat-ki" type="number" min="0" max="2" step="0.01" value="0.12"></label>
+          <label>Kd <input id="heat-kd" type="number" min="0" max="40" step="0.5" value="3"></label>
+        </div>
+        <div class="actions heat-actions">
+          <button type="button" id="heat-start" class="quiet">开始仿真</button>
+          <button type="button" id="heat-pause" class="quiet">暂停</button>
+          <button type="button" id="heat-reset" class="quiet">复位</button>
+        </div>
+        <div class="actions heat-actions">
+          <button type="button" id="heat-feed" class="quiet">送入料块</button>
+          <label><input id="heat-loss" type="checkbox"> 增加散热</label>
+        </div>
+        <p id="heat-status" role="status"></p>
+        <p class="heat-note">教学仿真 · 时间加速 10 倍。炉内橙色带表示加热区，料块颜色随工件温度变化。</p>
+      </section>
+      <section id="transfer-controls" class="teaching-panel" hidden>
+        <h3>双料仓供料与搬运</h3>
+        <div class="actions detect-sample">
+          <label>料仓 <select id="transfer-color"><option value="yellow">黄色料块</option><option value="blue">蓝色料块</option></select></label>
+          <button type="button" id="transfer-feed" class="quiet">推出料块</button>
+        </div>
+        <div class="actions">
+          <button type="button" id="transfer-step" class="quiet">单步搬运</button>
+          <button type="button" id="transfer-run" class="quiet">连续搬运</button>
+          <button type="button" id="transfer-reset" class="quiet">复位</button>
+        </div>
+        <p id="transfer-status" role="status"></p>
+        <p id="transfer-next"></p>
+        <div id="feed-signals" class="detection-sensors" aria-label="双动井式供料传感器">
+          <div data-signal="left"><span>下方 · 左位</span><b>OFF</b><small>左位对应蓝色出料</small></div>
+          <div data-signal="right"><span>下方 · 右位</span><b>OFF</b><small>右位对应黄色出料</small></div>
+          <div data-signal="yellow"><span>左侧 · 黄仓</span><b>OFF</b><small></small></div>
+          <div data-signal="blue"><span>右侧 · 蓝仓</span><b>OFF</b><small></small></div>
+        </div>
+        <p id="feed-confirmed-color"></p>
+        <div class="actions detect-sample">
+          <label>黄色存料 <select id="feed-stock-yellow"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+          <label>蓝色存料 <select id="feed-stock-blue"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+        </div>
+        <p class="transfer-base">机器人基坐标 X / Y / Z（mm）</p>
+        <ul id="transfer-points"></ul>
+        <p>俯视方向 · 取料朝 9 点钟，放料朝 3 点钟</p>
+        <a id="transfer-destination" href="#/station/S02" class="primary" hidden>到 S02 查看料块 <span aria-hidden="true">→</span></a>
+      </section>
+      <section id="storage-controls" class="teaching-panel" hidden>
+        <div class="section-heading"><h3>S05 带尾搬运入库</h3><span id="storage-count"></span></div>
+        <div id="storage-slots" role="group" aria-label="三层共十五个仓位"></div>
+        <div class="actions detect-sample">
+          <label>料块 <select id="storage-color"><option value="yellow">黄色</option><option value="blue">蓝色</option></select></label>
+          <button type="button" id="storage-stage" class="quiet">S05 带尾放料</button>
+        </div>
+        <div class="actions">
+          <button type="button" id="storage-step" class="quiet">单步入库</button>
+          <button type="button" id="storage-run" class="quiet">连续入库</button>
+          <button type="button" id="storage-reset" class="quiet">清空复位</button>
+        </div>
+        <p id="storage-status" role="status"></p>
+        <p id="storage-next"></p>
+      </section>
+      <details id="robot-controls" class="teaching-panel robot-controls" open hidden>
+        <summary>ABB IRB 120 · 手动控制</summary>
+        <div class="actions robot-modes" aria-label="机器人点动方式">
+          <button type="button" id="robot-joint-mode" class="quiet" aria-pressed="true">关节点动</button>
+          <button type="button" id="robot-base-mode" class="quiet" aria-pressed="false">基坐标点动</button>
+        </div>
+        <div id="robot-joint-panel">
+          <label class="robot-step">角度步距 <select id="robot-joint-step"><option value="1">1°</option><option value="5" selected>5°</option><option value="10">10°</option></select></label>
+          <div id="robot-joints" class="robot-rows"></div>
+        </div>
+        <div id="robot-base-panel" hidden>
+          <label class="robot-step">直线步距 <select id="robot-base-step"><option value="5">5 mm</option><option value="10" selected>10 mm</option><option value="25">25 mm</option></select></label>
+          <div id="robot-base-axes" class="robot-rows"></div>
+          <p class="robot-help">夹爪工具中心沿基坐标轴移动，保持点动前的工具姿态。</p>
+        </div>
+        <p class="robot-position"><span>夹爪中心（mm）</span><output id="robot-position">—</output></p>
+        <div class="actions"><button type="button" id="robot-stop" class="quiet">停止</button><button type="button" id="robot-reset" class="quiet">恢复默认姿态</button></div>
+        <p id="robot-status" role="status"></p>
+      </details>
+      <section id="feed-controls" class="teaching-panel" hidden>
+        <h3>双动井式供料 · 气缸控制</h3>
+        <p>每只气缸可单独操作。位移为教学示意。</p>
+        <div id="feed-cylinders"></div>
+        <button id="feed-reset" class="quiet" type="button">复位两缸</button>
+      </section>
+      <section id="machining-controls" class="teaching-panel" hidden>
+        <h3>上料、检测与压装</h3>
+        <div class="actions detect-sample">
+          <label><input type="checkbox" id="machining-incoming-core"> 来料带料芯</label>
+        </div>
+        <div class="actions">
+          <button type="button" id="machining-place-sample" class="quiet">左端放料</button>
+          <button type="button" id="machining-convey-sample" class="quiet">启动输送</button>
+          <button type="button" id="machining-push-sample" class="quiet">推入转盘</button>
+        </div>
+        <p id="machining-status" role="status"></p>
+        <p>传送带 <output id="machining-belt">停止</output></p>
+        <div id="machining-signals" class="detection-sensors" aria-label="加工工位传感器状态">
+          <div data-detector="arrival"><span>输送带 · 推料到位</span><b>OFF</b><small></small></div>
+          <div data-detector="home"><span>3 点钟下方 · 转盘原点</span><b>OFF</b><small></small></div>
+          <div data-detector="block"><span>12 点钟 · 料块检测</span><b>OFF</b><small></small></div>
+          <div data-detector="core"><span>12 点钟 · 料芯检测</span><b>OFF</b><small></small></div>
+        </div>
+        <h3>转盘分度</h3>
+        <div class="actions drive-actions">
+          <button type="button" id="motor-index-forward" class="quiet">转盘 +90°</button>
+          <button type="button" id="motor-index-reverse" class="quiet">转盘 −90°</button>
+          <button type="button" id="motor-home" class="quiet">回原点</button>
+          <button type="button" id="motor-forward" class="quiet">电机正转</button>
+          <button type="button" id="motor-reverse" class="quiet">电机反转</button>
+          <button type="button" id="motor-stop" class="quiet">停止电机</button>
+        </div>
+        <p id="motor-state">已停止</p>
+        <p>电机轴 <output id="motor-angle"></output> · 转盘 <output id="table-angle"></output></p>
+        <div class="machining-station">
+          <h3>9 点钟 · 加工位</h3>
+          <div class="actions">
+            <button type="button" id="machining-clamp-sample" class="quiet">底缸夹紧</button>
+            <button type="button" id="machining-insert-sample" class="quiet">中缸推出料芯</button>
+            <button type="button" id="machining-press-sample" class="quiet">上缸下降压装</button>
+            <button type="button" id="machining-release-sample" class="quiet">松开夹紧</button>
+          </div>
+        </div>
+        <details class="question">
+          <summary>四只气缸独立调试</summary>
+          <p>空载时可单独点动。转盘由电机经 16 齿小齿轮和 120 齿大齿轮驱动。</p>
+          <div id="machining-cylinders"></div>
+        </details>
+        <button id="machining-reset" class="quiet" type="button">复位加工单元</button>
+      </section>
+      <section id="buffer-controls" class="teaching-panel" hidden>
+        <h3>移载单元 · 手动控制</h3>
+        <p>X、Y 以原点传感器位置为 0 mm。丝杆教学导程为 4 mm/转。</p>
+        <div id="buffer-groups"></div>
+        <button id="buffer-reset" class="quiet" type="button">复位移载单元</button>
+      </section>
+      <template id="feed-cylinder-template">
+        <fieldset class="cylinder-control">
+          <legend></legend>
+          <p class="cylinder-spec"></p>
+          <div class="actions">
+            <button type="button" class="quiet" data-action="extend">伸出</button>
+            <button type="button" class="quiet" data-action="stop">停止</button>
+            <button type="button" class="quiet" data-action="retract">缩回</button>
+          </div>
+          <p class="cylinder-readout"><output aria-live="off"></output><span class="cylinder-state"></span></p>
+        </fieldset>
+      </template>
+      <template id="buffer-position-template">
+        <div class="axis-position">
+          <form class="axis-target">
+            <label>目标位置（mm）<input type="number" step="0.1" value="0" required></label>
+            <div class="actions"><button class="quiet" type="submit">定位</button><button class="quiet axis-home" type="button">回原点</button></div>
+          </form>
+          <div class="axis-signals" aria-label="传感器状态">
+            <span data-signal="upper">上限 <b>OFF</b></span>
+            <span data-signal="lower">下限 <b>OFF</b></span>
+            <span data-signal="home">原点 <b>OFF</b></span>
+          </div>
+        </div>
+      </template>
+      <section id="demonstration" class="teaching-panel" hidden>
+        <h3>输送、检测与分拣</h3>
+        <div class="actions detect-sample"><label>料块颜色 <select id="sample-color"><option value="blue">蓝色</option><option value="yellow">黄色</option></select></label><label><input id="sample-core" type="checkbox" checked>带铁芯</label></div>
+        <div class="actions detect-actions">
+          <button type="button" class="quiet" id="start-detection">启动输送</button><button type="button" class="quiet" id="stop-detection">暂停</button><button type="button" class="quiet" id="reset-detection">复位放料</button>
+        </div>
+        <div class="detection-sensors" aria-label="传感器状态">
+          <div data-detector="metal"><span>铁芯检测</span><b>OFF</b><small>待检测</small></div>
+          <div data-detector="color"><span>颜色检测</span><b>OFF</b><small>待检测</small></div>
+          <div data-detector="position"><span>分拣到位</span><b>OFF</b><small>待检测</small></div>
+        </div>
+        <div class="actions detect-actions">
+          <button type="button" class="quiet" id="sort-detection">推入滑道</button><button type="button" class="quiet" id="pass-detection">直行放行</button>
+        </div>
+        <p id="detection-status" role="status">料块已放在左端</p>
+        <p>电机 <output id="detection-motor">停止</output> · 气缸 <output id="motion-distance">0.0 mm</output></p>
+      </section>
+      <section id="lesson" class="teaching-panel" hidden>
+        <div class="section-heading"><h3>结构讲解</h3><span id="lesson-step"></span></div>
+        <div class="actions"><button type="button" id="lesson-prev" class="quiet">上一步</button><button type="button" id="lesson-next" class="quiet">开始讲解</button></div>
+        <details class="question"><summary>课堂观察题</summary><p id="question"></p></details>
+      </section>
+      <section id="structure" class="teaching-panel" hidden>
+        <h3>结构目录</h3>
+        <div class="actions structure-actions">
+          <button type="button" id="isolate" class="quiet" aria-pressed="false">单独观察</button><button type="button" id="hide-part" class="quiet">隐藏选中</button><button type="button" id="restore" class="quiet">恢复装配</button>
+        </div>
+        <div class="parts" id="parts"></div><button type="button" id="clear" class="quiet" hidden>清除选择</button>
+      </section>
+    </aside>
+  </div>
+</main>
+<script>
+(() => {
+  const label = document.getElementById('status');
+  const retry = document.getElementById('retry');
+  if (location.protocol === 'file:') {
+    const openPreview = document.getElementById('open-local-preview');
+    const url = new URL(openPreview.href);
+    url.hash = location.hash || '#/line';
+    openPreview.href = url.href;
+    openPreview.hidden = false;
+    label.textContent = '请通过本机网页服务打开，浏览器会限制本地文件加载三维模型。';
+    return;
+  }
+  function failed(message) {
+    label.textContent = message;
+    retry.hidden = false;
+    retry.onclick = () => {
+      const url = new URL(location.href);
+      url.searchParams.set('preview', Date.now().toString());
+      location.replace(url.href);
+    };
+  }
+  const script = new URL('./classroom.js', document.baseURI);
+  script.searchParams.set('v', new URLSearchParams(location.search).get('preview') || 's05-pid');
+  const timer = setTimeout(() => failed('预览脚本加载超时，请重试。'), 12000);
+  import(script.href).then(() => clearTimeout(timer), error => {
+    clearTimeout(timer);
+    failed('预览脚本加载失败，请重试。');
+    console.error(error);
+  });
+})();
+</script>
+</body>
+</html>
